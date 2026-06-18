@@ -1,23 +1,22 @@
 --[[
-    Player Intel Scanner - 全功能玩家信息扫描器 (仅供娱乐)
-    获取服务器内所有玩家的详细信息
+    Player Intel Scanner - 本地版 (仅供娱乐)
+    纯本地获取，不依赖网络API
 ]]
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 if _G.PlayerIntelLoaded then
-    warn("[PlayerIntel] 已经加载了！请不要重复执行。")
+    warn("[PlayerIntel] 已经加载了！")
     return
 end
 _G.PlayerIntelLoaded = true
 
 local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
--- ========== 配色 ==========
 local C = {
     WinBg = Color3.fromRGB(30, 30, 46);
     WinTitle = Color3.fromRGB(24, 24, 37);
@@ -44,117 +43,18 @@ local C = {
     InputBg = Color3.fromRGB(24, 24, 37);
 }
 
-local function notify(title, text)
+local function notify(t, txt)
     pcall(function()
-        StarterGui:SetCore("SendNotification", {Title = title, Text = text, Duration = 3})
+        StarterGui:SetCore("SendNotification", {Title=t, Text=txt, Duration=3})
     end)
 end
 
--- ========== API（异步安全版） ==========
-local function apiGetAsync(url)
-    local ok, res = pcall(function()
-        return game:HttpGetAsync(url);
-    end)
-    if ok and res then
-        local ok2, data = pcall(function() return HttpService:JSONDecode(res) end)
-        if ok2 then return data end
-    end
-    -- 降级到同步
-    local ok3, res3 = pcall(function()
-        return game:HttpGet(url, 5);
-    end)
-    if ok3 and res3 then
-        local ok4, data4 = pcall(function() return HttpService:JSONDecode(res3) end)
-        if ok4 then return data4 end
-    end
-    return nil
-end
-
-local function getAccountAge(userId)
-    local data = apiGetAsync("https://users.roblox.com/v1/users/" .. tostring(userId))
-    if data and data.created then
-        local y, m, d = data.created:match("(%d+)-(%d+)-(%d+)")
-        if y then
-            local ageDays = math.floor((os.time() - os.time({year=tonumber(y),month=tonumber(m),day=tonumber(d)})) / 86400)
-            return string.format("%d年%d月%d日 (%d天)", tonumber(y), tonumber(m), tonumber(d), ageDays)
-        end
-    end
-    return "未知"
-end
-
-local function getPlayerDesc(userId)
-    local data = apiGetAsync("https://users.roblox.com/v1/users/" .. tostring(userId))
-    if data then return data.description or "无简介" end
-    return "获取失败"
-end
-
-local function getPresence(userId)
-    local ok, res = pcall(function()
-        local body = HttpService:JSONEncode({userIds = {userId}})
-        local r = game:HttpPost("https://presence.roblox.com/v1/presence/users", body, Enum.HttpContentType.ApplicationJson)
-        local d = HttpService:JSONDecode(r)
-        if d.userPresences and #d.userPresences > 0 then return d.userPresences[1] end
-    end)
-    if ok and res then
-        local names = {["0"]="离线",["1"]="在线",["2"]="游戏中",["3"]="工作室",["4"]="隐形"}
-        return names[tostring(res.userPresenceType)] or "未知"
-    end
-    return "在线"
-end
-
-local function getCount(url)
-    local ok, res = pcall(function() return tonumber(game:HttpGet(url, 5)) or 0 end)
-    return ok and res or 0
-end
-
-local function getThumbnail(userId)
-    local data = apiGetAsync("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. tostring(userId) .. "&size=150x150&format=Png&isCircular=false")
-    if data and data.data and #data.data > 0 then return data.data[1].imageUrl or "" end
-    return ""
-end
-
-local function getWornAssets(userId)
-    local data = apiGetAsync("https://avatar.roblox.com/v1/users/" .. tostring(userId) .. "/currently-wearing")
-    return data or {}
-end
-
-local function getAssetInfo(assetId)
-    return apiGetAsync("https://economy.roblox.com/v2/assets/" .. tostring(assetId) .. "/details")
-end
-
-local function getGroups(userId)
-    local data = apiGetAsync("https://groups.roblox.com/v2/users/" .. tostring(userId) .. "/groups/roles")
-    local groups = {}
-    if data and data.data then
-        for _, g in ipairs(data.data) do
-            table.insert(groups, g.group.name .. "(" .. g.role.name .. ")")
-        end
-    end
-    return groups
-end
-
--- ========== 数据缓存 ==========
-local playerCache = {}
+-- ========== 数据 ==========
+local playerCards = {}
 local chatLogs = {}
 local conns = {}
-local scannedPlayers = {}
 
--- ========== 聊天监控 ==========
-local function monitorChat(player)
-    if chatLogs[player.UserId] then return end
-    chatLogs[player.UserId] = {msgs = {}, count = 0}
-    local conn = LP.Chatted:Connect(function(msg, target)
-        if target and target.UserId == player.UserId then
-            table.insert(chatLogs[player.UserId].msgs, msg)
-            if #chatLogs[player.UserId].msgs > 50 then
-                table.remove(chatLogs[player.UserId].msgs, 1)
-            end
-        end
-    end)
-    table.insert(conns, conn)
-end
-
--- ========== 创建UI ==========
+-- ========== UI ==========
 local gui = Instance.new("ScreenGui")
 gui.Name = "PlayerIntel"
 gui.ResetOnSpawn = false
@@ -162,24 +62,19 @@ gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = LP:WaitForChild("PlayerGui")
 
 local main = Instance.new("Frame")
-main.Name = "Main"
 main.Size = UDim2.new(0, 400, 0, 320)
 main.Position = UDim2.new(0.5, -200, 0.5, -160)
 main.BackgroundColor3 = C.WinBg
 main.BorderSizePixel = 0
 main.Active = true
+main.Selectable = true
 main.Parent = gui
 
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 10)
-mainCorner.Parent = main
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
+Instance.new("UIStroke", main).Color = C.Surface2
+Instance.new("UIStroke", main).Thickness = 1
 
-local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = C.Surface2
-mainStroke.Thickness = 1
-mainStroke.Parent = main
-
--- 标题栏（用TextButton才能在触摸设备上拖拽）
+-- 标题栏（TextButton用于拖拽）
 local titleBar = Instance.new("TextButton")
 titleBar.Size = UDim2.new(1, 0, 0, 32)
 titleBar.BackgroundColor3 = C.WinTitle
@@ -187,13 +82,11 @@ titleBar.BorderSizePixel = 0
 titleBar.Text = ""
 titleBar.AutoButtonColor = false
 titleBar.Active = true
+titleBar.Selectable = true
 titleBar.Parent = main
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
 
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 10)
-titleCorner.Parent = titleBar
-
--- 标题栏底部填充（修复圆角）
+-- 修复标题栏底部圆角
 local titleFill = Instance.new("Frame")
 titleFill.Size = UDim2.new(1, 0, 0, 10)
 titleFill.Position = UDim2.new(0, 0, 1, -10)
@@ -230,7 +123,7 @@ local countLabel = Instance.new("TextLabel")
 countLabel.Size = UDim2.new(0, 50, 0, 16)
 countLabel.Position = UDim2.new(1, -110, 0, 8)
 countLabel.BackgroundTransparency = 1
-countLabel.Text = "0 人"
+countLabel.Text = "0"
 countLabel.Font = Enum.Font.GothamBold
 countLabel.TextSize = 11
 countLabel.TextColor3 = C.Accent
@@ -252,13 +145,7 @@ minBtn.AutoButtonColor = false
 minBtn.Active = true
 minBtn.ZIndex = 10
 minBtn.Parent = titleBar
-
-local minC = Instance.new("UICorner")
-minC.CornerRadius = UDim.new(0, 6)
-minC.Parent = minBtn
-
-minBtn.MouseEnter:Connect(function() minBtn.BackgroundColor3 = C.MinHover end)
-minBtn.MouseLeave:Connect(function() minBtn.BackgroundColor3 = C.MinBtn end)
+Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
 
 -- 关闭按钮
 local closeBtn = Instance.new("TextButton")
@@ -274,13 +161,7 @@ closeBtn.AutoButtonColor = false
 closeBtn.Active = true
 closeBtn.ZIndex = 10
 closeBtn.Parent = titleBar
-
-local closeC = Instance.new("UICorner")
-closeC.CornerRadius = UDim.new(0, 6)
-closeC.Parent = closeBtn
-
-closeBtn.MouseEnter:Connect(function() closeBtn.BackgroundColor3 = C.CloseBtn end)
-closeBtn.MouseLeave:Connect(function() closeBtn.BackgroundColor3 = C.Surface1 end)
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
 
 -- 搜索框
 local searchFrame = Instance.new("Frame")
@@ -289,15 +170,9 @@ searchFrame.Position = UDim2.new(0, 8, 0, 38)
 searchFrame.BackgroundColor3 = C.InputBg
 searchFrame.BorderSizePixel = 0
 searchFrame.Parent = main
-
-local searchC = Instance.new("UICorner")
-searchC.CornerRadius = UDim.new(0, 6)
-searchC.Parent = searchFrame
-
-local searchS = Instance.new("UIStroke")
-searchS.Color = C.Surface2
-searchS.Thickness = 1
-searchS.Parent = searchFrame
+Instance.new("UICorner", searchFrame).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", searchFrame).Color = C.Surface2
+Instance.new("UIStroke", searchFrame).Thickness = 1
 
 local searchInput = Instance.new("TextBox")
 searchInput.Size = UDim2.new(1, -10, 1, 0)
@@ -326,17 +201,10 @@ refreshBtn.TextColor3 = C.Accent
 refreshBtn.AutoButtonColor = false
 refreshBtn.Active = true
 refreshBtn.Parent = main
-
-local refreshC = Instance.new("UICorner")
-refreshC.CornerRadius = UDim.new(0, 6)
-refreshC.Parent = refreshBtn
-
-refreshBtn.MouseEnter:Connect(function() refreshBtn.BackgroundColor3 = C.Surface2 end)
-refreshBtn.MouseLeave:Connect(function() refreshBtn.BackgroundColor3 = C.Surface1 end)
+Instance.new("UICorner", refreshBtn).CornerRadius = UDim.new(0, 6)
 
 -- 滚动区域
 local scroll = Instance.new("ScrollingFrame")
-scroll.Name = "List"
 scroll.Size = UDim2.new(1, -16, 1, -72)
 scroll.Position = UDim2.new(0, 8, 0, 70)
 scroll.BackgroundTransparency = 1
@@ -372,10 +240,9 @@ statusLabel.TextColor3 = C.TextDim
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Parent = statusBar
 
--- ========== 创建玩家卡片 ==========
+-- ========== 创建玩家卡片（纯本地） ==========
 local function makeCard(player)
-    if scannedPlayers[player.UserId] then return end
-    scannedPlayers[player.UserId] = true
+    if playerCards[player.UserId] then return end
 
     local uid = player.UserId
     local card = Instance.new("Frame")
@@ -386,71 +253,64 @@ local function makeCard(player)
     card.AutomaticSize = Enum.AutomaticSize.Y
     card.Parent = scroll
 
-    local cc = Instance.new("UICorner")
-    cc.CornerRadius = UDim.new(0, 8)
-    cc.Parent = card
-
-    local cs = Instance.new("UIStroke")
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+    local cs = Instance.new("UIStroke", card)
     cs.Color = C.CardBorder
     cs.Thickness = 1
-    cs.Parent = card
 
-    local pad = Instance.new("UIPadding")
+    local pad = Instance.new("UIPadding", card)
     pad.PaddingLeft = UDim.new(0, 10)
     pad.PaddingRight = UDim.new(0, 10)
     pad.PaddingTop = UDim.new(0, 8)
     pad.PaddingBottom = UDim.new(0, 8)
-    pad.Parent = card
 
-    -- 头部行
+    -- 头部
     local header = Instance.new("Frame")
-    header.Size = UDim2.new(1, 0, 0, 36)
+    header.Size = UDim2.new(1, 0, 0, 32)
     header.BackgroundTransparency = 1
     header.Parent = card
 
-    -- 头像
-    local avFrame = Instance.new("Frame")
-    avFrame.Size = UDim2.new(0, 32, 0, 32)
-    avFrame.BackgroundColor3 = C.Surface2
-    avFrame.BorderSizePixel = 0
-    avFrame.Parent = header
+    -- 头像背景
+    local avBg = Instance.new("Frame")
+    avBg.Size = UDim2.new(0, 28, 0, 28)
+    avBg.BackgroundColor3 = C.Surface2
+    avBg.BorderSizePixel = 0
+    avBg.Parent = header
+    Instance.new("UICorner", avBg).CornerRadius = UDim.new(1, 0)
 
-    local avC = Instance.new("UICorner")
-    avC.CornerRadius = UDim.new(1, 0)
-    avC.Parent = avFrame
+    -- 头像文字（首字母）
+    local avLetter = Instance.new("TextLabel")
+    avLetter.Size = UDim2.new(1, 0, 1, 0)
+    avLetter.BackgroundTransparency = 1
+    avLetter.Text = player.DisplayName:sub(1, 1):upper()
+    avLetter.Font = Enum.Font.GothamBold
+    avLetter.TextSize = 14
+    avLetter.TextColor3 = C.Accent
+    avLetter.Parent = avBg
 
-    local avImg = Instance.new("ImageLabel")
-    avImg.Size = UDim2.new(1, 0, 1, 0)
-    avImg.BackgroundTransparency = 1
-    avImg.Parent = avFrame
-
-    pcall(function()
-        local url = getThumbnail(uid)
-        if url ~= "" then avImg.Image = url end
-    end)
-
-    -- 名字
+    -- 显示名
     local nameLbl = Instance.new("TextLabel")
-    nameLbl.Size = UDim2.new(1, -42, 0, 16)
-    nameLbl.Position = UDim2.new(0, 38, 0, 0)
+    nameLbl.Size = UDim2.new(1, -38, 0, 15)
+    nameLbl.Position = UDim2.new(0, 34, 0, 0)
     nameLbl.BackgroundTransparency = 1
     nameLbl.Text = player.DisplayName
     nameLbl.Font = Enum.Font.GothamBold
     nameLbl.TextSize = 12
     nameLbl.TextColor3 = C.Text
     nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+    nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
     nameLbl.Parent = header
 
     -- 用户名+标签
-    local tagStr = "@" .. player.Name
-    if player.MembershipType == Enum.MembershipType.Premium then tagStr = tagStr .. " [PREMIUM]" end
-    if player:IsFriendsWith(LP.UserId) then tagStr = tagStr .. " [好友]" end
+    local tags = "@" .. player.Name
+    if player.MembershipType == Enum.MembershipType.Premium then tags = tags .. " [PREM]" end
+    if player:IsFriendsWith(LP.UserId) then tags = tags .. " [好友]" end
 
     local userLbl = Instance.new("TextLabel")
-    userLbl.Size = UDim2.new(1, -42, 0, 14)
-    userLbl.Position = UDim2.new(0, 38, 0, 16)
+    userLbl.Size = UDim2.new(1, -38, 0, 13)
+    userLbl.Position = UDim2.new(0, 34, 0, 15)
     userLbl.BackgroundTransparency = 1
-    userLbl.Text = tagStr
+    userLbl.Text = tags
     userLbl.Font = Enum.Font.Gotham
     userLbl.TextSize = 9
     userLbl.TextColor3 = C.TextDim
@@ -465,147 +325,114 @@ local function makeCard(player)
     sep.BorderSizePixel = 0
     sep.Parent = card
 
-    -- 信息列表
-    local infoList = Instance.new("Frame")
-    infoList.Size = UDim2.new(1, 0, 0, 0)
-    infoList.BackgroundTransparency = 1
-    infoList.AutomaticSize = Enum.AutomaticSize.Y
-    infoList.Parent = card
+    -- 信息区域
+    local info = Instance.new("Frame")
+    info.Size = UDim2.new(1, 0, 0, 0)
+    info.BackgroundTransparency = 1
+    info.AutomaticSize = Enum.AutomaticSize.Y
+    info.Parent = card
 
     local infoLayout = Instance.new("UIListLayout")
     infoLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    infoLayout.Padding = UDim.new(0, 2)
-    infoLayout.Parent = infoList
+    infoLayout.Padding = UDim.new(0, 1)
+    infoLayout.Parent = info
 
-    local function addRow(label, value, color)
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 14)
-        row.BackgroundTransparency = 1
-        row.Parent = infoList
+    local function row(label, value, color)
+        local r = Instance.new("Frame")
+        r.Size = UDim2.new(1, 0, 0, 13)
+        r.BackgroundTransparency = 1
+        r.Parent = info
 
         local l = Instance.new("TextLabel")
-        l.Size = UDim2.new(0, 70, 1, 0)
+        l.Size = UDim2.new(0, 65, 1, 0)
         l.BackgroundTransparency = 1
         l.Text = label
         l.Font = Enum.Font.Gotham
         l.TextSize = 9
         l.TextColor3 = C.TextDim
         l.TextXAlignment = Enum.TextXAlignment.Left
-        l.TextTruncate = Enum.TextTruncate.AtEnd
-        l.Parent = row
+        l.Parent = r
 
         local v = Instance.new("TextLabel")
-        v.Size = UDim2.new(1, -75, 1, 0)
-        v.Position = UDim2.new(0, 72, 0, 0)
+        v.Size = UDim2.new(1, -70, 1, 0)
+        v.Position = UDim2.new(0, 68, 0, 0)
         v.BackgroundTransparency = 1
-        v.Text = value or "..."
+        v.Text = value or ""
         v.Font = Enum.Font.GothamBold
         v.TextSize = 9
         v.TextColor3 = color or C.TextSub
         v.TextXAlignment = Enum.TextXAlignment.Left
         v.TextTruncate = Enum.TextTruncate.AtEnd
-        v.Parent = row
+        v.Parent = r
         return v
     end
 
-    local function addSection(title)
+    local function section(title)
         local s = Instance.new("TextLabel")
-        s.Size = UDim2.new(1, 0, 0, 16)
+        s.Size = UDim2.new(1, 0, 0, 14)
         s.BackgroundTransparency = 1
         s.Text = "> " .. title
         s.Font = Enum.Font.GothamBold
         s.TextSize = 10
         s.TextColor3 = C.Accent
         s.TextXAlignment = Enum.TextXAlignment.Left
-        s.Parent = infoList
+        s.Parent = info
     end
 
-    -- 基础
-    addSection("基础信息")
-    addRow("ID:", tostring(uid), C.TextDim)
-    local descLbl = addRow("简介:", "加载中...")
-    local createdLbl = addRow("注册:", "加载中...")
-    local presenceLbl = addRow("状态:", "加载中...", C.Green)
-    local memberLbl = addRow("会员:", player.MembershipType == Enum.MembershipType.Premium and "Premium" or "免费", player.MembershipType == Enum.MembershipType.Premium and C.Yellow or C.TextDim)
+    -- 基础信息
+    section("基础信息")
+    row("ID:", tostring(uid), C.TextDim)
+    row("会员:", player.MembershipType == Enum.MembershipType.Premium and "Premium" or "免费", player.MembershipType == Enum.MembershipType.Premium and C.Yellow or C.TextDim)
+    row("好友:", tostring(player:IsFriendsWith(LP.UserId) and "是" or "否"), player:IsFriendsWith(LP.UserId) and C.Green or C.TextDim)
 
-    -- 社交
-    addSection("社交")
-    local friendLbl = addRow("好友:", "加载中...")
-    local followerLbl = addRow("粉丝:", "加载中...")
-    local followingLbl = addRow("关注:", "加载中...")
+    -- 游戏信息
+    section("游戏信息")
+    local joinTime = os.date("%H:%M:%S")
+    row("加入时间:", joinTime)
+    local playLbl = row("游玩时长:", "0秒")
+    local chatLbl = row("消息:", "0条")
+    local lastMsgLbl = row("最近:", "无")
 
-    -- 游戏
-    addSection("游戏")
-    local joinLbl = addRow("加入:", os.date("%H:%M:%S"))
-    local playLbl = addRow("时长:", "0秒")
-    local chatLbl = addRow("消息:", "0条")
-    local lastMsgLbl = addRow("最近:", "无")
+    -- 角色信息（实时）
+    section("角色(实时)")
+    local healthLbl = row("血量:", "...")
+    local speedLbl = row("移速:", "...")
+    local jumpLbl = row("跳跃:", "...")
+    local posLbl = row("坐标:", "...")
 
-    -- 角色
-    addSection("角色(实时)")
-    local healthLbl = addRow("血量:", "...")
-    local speedLbl = addRow("移速:", "...")
-    local jumpLbl = addRow("跳跃:", "...")
-    local posLbl = addRow("坐标:", "...")
-
-    -- 装扮
-    addSection("装扮")
-    local assetLbl = addRow("装扮:", "加载中...")
-    local costLbl = addRow("价值:", "加载中...", C.Yellow)
-
-    -- 群组
-    addSection("群组")
-    local groupLbl = addRow("群组:", "加载中...")
+    -- 角色外观
+    section("角色外观")
+    local bodyParts = row("部件数:", "...")
+    local accessories = row("配件数:", "...")
+    local shirtColor = row("衬衫:", "...")
+    local pantsColor = row("裤子:", "...")
 
     -- 缓存
-    playerCache[uid] = {
+    playerCards[uid] = {
         card = card,
+        playLbl = playLbl,
         chatLbl = chatLbl,
         lastMsgLbl = lastMsgLbl,
-        playLbl = playLbl,
         healthLbl = healthLbl,
         speedLbl = speedLbl,
         jumpLbl = jumpLbl,
         posLbl = posLbl,
+        bodyParts = bodyParts,
+        accessories = accessories,
+        shirtColor = shirtColor,
+        pantsColor = pantsColor,
         joinTick = tick()
     }
 
     -- 聊天监控
-    monitorChat(player)
-
-    -- 异步获取信息
-    task.spawn(function()
-        pcall(function() createdLbl.Text = getAccountAge(uid) end)
-        pcall(function() descLbl.Text = getPlayerDesc(uid):sub(1, 40) end)
-        pcall(function() presenceLbl.Text = getPresence(uid) end)
-        pcall(function() friendLbl.Text = tostring(getCount("https://friends.roblox.com/v1/users/" .. uid .. "/friends/count")) end)
-        pcall(function() followerLbl.Text = tostring(getCount("https://friends.roblox.com/v1/users/" .. uid .. "/followers/count")) end)
-        pcall(function() followingLbl.Text = tostring(getCount("https://friends.roblox.com/v1/users/" .. uid .. "/followings/count")) end)
-
-        -- 装扮
-        pcall(function()
-            local assets = getWornAssets(uid)
-            assetLbl.Text = #assets .. "件"
-            local names = {}
-            local totalCost = 0
-            for i, id in ipairs(assets) do
-                if i > 8 then break end
-                local info = getAssetInfo(id)
-                if info then
-                    table.insert(names, info.Name or "?")
-                    if info.Price and info.Price > 0 then totalCost = totalCost + info.Price end
-                end
-            end
-            assetLbl.Text = #assets .. "件 | " .. table.concat(names, ","):sub(1, 50)
-            costLbl.Text = totalCost > 0 and (tostring(totalCost) .. " R$") or "无法计算"
-        end)
-
-        -- 群组
-        pcall(function()
-            local groups = getGroups(uid)
-            groupLbl.Text = #groups > 0 and table.concat(groups, ", "):sub(1, 60) or "无"
-        end)
+    chatLogs[uid] = {msgs = {}}
+    local chatConn = LP.Chatted:Connect(function(msg, target)
+        if target and target.UserId == uid then
+            table.insert(chatLogs[uid].msgs, msg)
+            if #chatLogs[uid].msgs > 50 then table.remove(chatLogs[uid].msgs, 1) end
+        end
     end)
+    table.insert(conns, chatConn)
 
     -- 实时更新
     task.spawn(function()
@@ -617,7 +444,7 @@ local function makeCard(player)
                     local hum = ch:FindFirstChildOfClass("Humanoid")
                     local root = ch:FindFirstChild("HumanoidRootPart")
                     if hum then
-                        healthLbl.Text = string.format("%.0f/%.0f", hum.Health, hum.MaxHealth)
+                        healthLbl.Text = string.format("%.0f / %.0f", hum.Health, hum.MaxHealth)
                         speedLbl.Text = tostring(hum.WalkSpeed)
                         jumpLbl.Text = tostring(hum.JumpPower)
                     end
@@ -625,12 +452,41 @@ local function makeCard(player)
                         local p = root.Position
                         posLbl.Text = string.format("(%.0f, %.0f, %.0f)", p.X, p.Y, p.Z)
                     end
+
+                    -- 角色外观
+                    local parts = 0
+                    local accs = 0
+                    local shirtC = "无"
+                    local pantsC = "无"
+                    for _, child in ipairs(ch:GetChildren()) do
+                        if child:IsA("BasePart") or child:IsA("Humanoid") then
+                            parts = parts + 1
+                        elseif child:IsA("Accessory") then
+                            accs = accs + 1
+                        end
+                    end
+                    local shirt = ch:FindFirstChild("Shirt")
+                    if shirt and shirt:IsA("Shirt") then
+                        shirtC = "有"
+                    end
+                    local pants = ch:FindFirstChild("Pants")
+                    if pants and pants:IsA("Pants") then
+                        pantsC = "有"
+                    end
+                    bodyParts.Text = tostring(parts)
+                    accessories.Text = tostring(accs)
+                    shirtColor.Text = shirtC
+                    pantsColor.Text = pantsC
                 end
-                local elapsed = tick() - playerCache[uid].joinTick
+
+                -- 游玩时长
+                local elapsed = tick() - playerCards[uid].joinTick
                 local h = math.floor(elapsed / 3600)
                 local m = math.floor((elapsed % 3600) / 60)
                 local s = math.floor(elapsed % 60)
                 playLbl.Text = string.format("%d时%d分%d秒", h, m, s)
+
+                -- 聊天
                 if chatLogs[uid] then
                     chatLbl.Text = #chatLogs[uid].msgs .. "条"
                     if #chatLogs[uid].msgs > 0 then
@@ -642,7 +498,19 @@ local function makeCard(player)
     end)
 end
 
--- ========== 最小化 ==========
+-- ========== 扫描所有玩家 ==========
+local function scanAll()
+    local playerList = Players:GetPlayers()
+    for _, plr in ipairs(playerList) do
+        makeCard(plr)
+    end
+    countLabel.Text = tostring(#playerList)
+    statusLabel.Text = "就绪 | " .. #playerList .. " 名玩家"
+end
+
+-- ========== 事件绑定 ==========
+
+-- 最小化
 local minimized = false
 local minIcon
 
@@ -663,15 +531,8 @@ minBtn.MouseButton1Click:Connect(function()
         minIcon.AutoButtonColor = false
         minIcon.Active = true
         minIcon.Parent = gui
-
-        local ic = Instance.new("UICorner")
-        ic.CornerRadius = UDim.new(0, 8)
-        ic.Parent = minIcon
-
-        local is = Instance.new("UIStroke")
-        is.Color = C.Surface2
-        is.Thickness = 1
-        is.Parent = minIcon
+        Instance.new("UICorner", minIcon).CornerRadius = UDim.new(0, 8)
+        Instance.new("UIStroke", minIcon).Color = C.Surface2
 
         local dot = Instance.new("Frame")
         dot.Size = UDim2.new(0, 8, 0, 8)
@@ -679,10 +540,7 @@ minBtn.MouseButton1Click:Connect(function()
         dot.BackgroundColor3 = C.Green
         dot.BorderSizePixel = 0
         dot.Parent = minIcon
-
-        local dc = Instance.new("UICorner")
-        dc.CornerRadius = UDim.new(1, 0)
-        dc.Parent = dot
+        Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
 
         minIcon.MouseButton1Click:Connect(function()
             minimized = false
@@ -693,37 +551,29 @@ minBtn.MouseButton1Click:Connect(function()
     minIcon.Visible = true
 end)
 
--- ========== 关闭 ==========
+-- 关闭
 closeBtn.MouseButton1Click:Connect(function()
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
     conns = {}
-    playerCache = {}
+    playerCards = {}
     chatLogs = {}
-    scannedPlayers = {}
     gui:Destroy()
     _G.PlayerIntelLoaded = false
     notify("PlayerIntel", "已关闭")
 end)
 
--- ========== 刷新 ==========
+-- 刷新
 refreshBtn.MouseButton1Click:Connect(function()
     for _, child in ipairs(scroll:GetChildren()) do
         if child:IsA("Frame") then child:Destroy() end
     end
-    playerCache = {}
+    playerCards = {}
     chatLogs = {}
-    scannedPlayers = {}
-    statusLabel.Text = "重新扫描..."
-    task.wait(0.5)
-    for _, plr in ipairs(Players:GetPlayers()) do
-        makeCard(plr)
-    end
-    countLabel.Text = #Players:GetPlayers() .. " 人"
-    statusLabel.Text = "就绪 | " .. #Players:GetPlayers() .. " 名玩家"
+    scanAll()
     notify("PlayerIntel", "刷新完成")
 end)
 
--- ========== 搜索 ==========
+-- 搜索
 searchInput:GetPropertyChangedSignal("Text"):Connect(function()
     local q = string.lower(searchInput.Text)
     for _, child in ipairs(scroll:GetChildren()) do
@@ -733,18 +583,32 @@ searchInput:GetPropertyChangedSignal("Text"):Connect(function()
     end
 end)
 
--- ========== 拖拽 ==========
+-- 悬停效果
+minBtn.MouseEnter:Connect(function() minBtn.BackgroundColor3 = C.MinHover end)
+minBtn.MouseLeave:Connect(function() minBtn.BackgroundColor3 = C.MinBtn end)
+closeBtn.MouseEnter:Connect(function() closeBtn.BackgroundColor3 = C.CloseBtn end)
+closeBtn.MouseLeave:Connect(function() closeBtn.BackgroundColor3 = C.Surface1 end)
+refreshBtn.MouseEnter:Connect(function() refreshBtn.BackgroundColor3 = C.Surface2 end)
+refreshBtn.MouseLeave:Connect(function() refreshBtn.BackgroundColor3 = C.Surface1 end)
+
+-- 拖拽
 local dragging = false
 local dragStart, startPos
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = main.Position
-    end
+titleBar.MouseButton1Down:Connect(function(x, y)
+    dragging = true
+    dragStart = Vector2.new(x, y)
+    startPos = main.Position
+end)
+titleBar.TouchPan:Connect(function(_, _, _, _, _, y, velocity)
+    if not dragging then return end
+    local delta = velocity * 0.5
+    main.Position = UDim2.new(
+        startPos.X.Scale, startPos.X.Offset + delta.X,
+        startPos.Y.Scale, startPos.Y.Offset + delta.Y
+    )
 end)
 UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
         local d = input.Position - dragStart
         main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
     end
@@ -755,50 +619,31 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- ========== 重复扫描 ==========
-local function scanAllPlayers()
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if not scannedPlayers[plr.UserId] then
-            makeCard(plr)
-        end
-    end
-    countLabel.Text = #Players:GetPlayers() .. " 人"
-    statusLabel.Text = "就绪 | " .. #Players:GetPlayers() .. " 名玩家"
-end
+-- ========== 初始扫描 ==========
+scanAll()
 
--- 初始扫描
-task.delay(0.5, scanAllPlayers)
-
--- 每5秒重复扫描一次（防止漏掉新玩家）
-local repeatScanConn
-repeatScanConn = game:GetService("RunService").Heartbeat:Connect(function()
-    if tick() % 5 < 0.1 then
-        scanAllPlayers()
-    end
+-- 每10秒重复扫描
+local scanConn = RunService.Heartbeat:Connect(function()
+    if tick() % 10 < 0.1 then scanAll() end
 end)
-table.insert(conns, repeatScanConn)
+table.insert(conns, scanConn)
 
 -- 玩家加入
-local joinConn = Players.PlayerAdded:Connect(function(plr)
-    task.wait(1)
+table.insert(conns, Players.PlayerAdded:Connect(function(plr)
+    task.wait(0.5)
     makeCard(plr)
-    countLabel.Text = #Players:GetPlayers() .. " 人"
-    statusLabel.Text = "就绪 | " .. #Players:GetPlayers() .. " 名玩家"
+    scanAll()
     notify("PlayerIntel", plr.DisplayName .. " 加入")
-end)
-table.insert(conns, joinConn)
+end))
 
 -- 玩家离开
-local leaveConn = Players.PlayerRemoving:Connect(function(plr)
-    if playerCache[plr.UserId] and playerCache[plr.UserId].card then
-        playerCache[plr.UserId].card:Destroy()
+table.insert(conns, Players.PlayerRemoving:Connect(function(plr)
+    if playerCards[plr.UserId] and playerCards[plr.UserId].card then
+        playerCards[plr.UserId].card:Destroy()
     end
-    playerCache[plr.UserId] = nil
+    playerCards[plr.UserId] = nil
     chatLogs[plr.UserId] = nil
-    scannedPlayers[plr.UserId] = nil
-    countLabel.Text = #Players:GetPlayers() .. " 人"
-    statusLabel.Text = "就绪 | " .. #Players:GetPlayers() .. " 名玩家"
-end)
-table.insert(conns, leaveConn)
+    scanAll()
+end))
 
 notify("PlayerIntel Scanner", "仅供娱乐 - 开始扫描")
