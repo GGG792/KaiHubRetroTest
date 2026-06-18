@@ -50,18 +50,28 @@ local function notify(title, text)
     end)
 end
 
--- ========== API ==========
-local function apiGet(url)
-    local ok, res = pcall(function() return game:HttpGet(url) end)
+-- ========== API（异步安全版） ==========
+local function apiGetAsync(url)
+    local ok, res = pcall(function()
+        return game:HttpGetAsync(url);
+    end)
     if ok and res then
         local ok2, data = pcall(function() return HttpService:JSONDecode(res) end)
         if ok2 then return data end
+    end
+    -- 降级到同步
+    local ok3, res3 = pcall(function()
+        return game:HttpGet(url, 5);
+    end)
+    if ok3 and res3 then
+        local ok4, data4 = pcall(function() return HttpService:JSONDecode(res3) end)
+        if ok4 then return data4 end
     end
     return nil
 end
 
 local function getAccountAge(userId)
-    local data = apiGet("https://users.roblox.com/v1/users/" .. tostring(userId))
+    local data = apiGetAsync("https://users.roblox.com/v1/users/" .. tostring(userId))
     if data and data.created then
         local y, m, d = data.created:match("(%d+)-(%d+)-(%d+)")
         if y then
@@ -73,7 +83,7 @@ local function getAccountAge(userId)
 end
 
 local function getPlayerDesc(userId)
-    local data = apiGet("https://users.roblox.com/v1/users/" .. tostring(userId))
+    local data = apiGetAsync("https://users.roblox.com/v1/users/" .. tostring(userId))
     if data then return data.description or "无简介" end
     return "获取失败"
 end
@@ -93,27 +103,27 @@ local function getPresence(userId)
 end
 
 local function getCount(url)
-    local ok, res = pcall(function() return tonumber(game:HttpGet(url)) or 0 end)
+    local ok, res = pcall(function() return tonumber(game:HttpGet(url, 5)) or 0 end)
     return ok and res or 0
 end
 
 local function getThumbnail(userId)
-    local data = apiGet("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. tostring(userId) .. "&size=150x150&format=Png&isCircular=false")
+    local data = apiGetAsync("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. tostring(userId) .. "&size=150x150&format=Png&isCircular=false")
     if data and data.data and #data.data > 0 then return data.data[1].imageUrl or "" end
     return ""
 end
 
 local function getWornAssets(userId)
-    local data = apiGet("https://avatar.roblox.com/v1/users/" .. tostring(userId) .. "/currently-wearing")
+    local data = apiGetAsync("https://avatar.roblox.com/v1/users/" .. tostring(userId) .. "/currently-wearing")
     return data or {}
 end
 
 local function getAssetInfo(assetId)
-    return apiGet("https://economy.roblox.com/v2/assets/" .. tostring(assetId) .. "/details")
+    return apiGetAsync("https://economy.roblox.com/v2/assets/" .. tostring(assetId) .. "/details")
 end
 
 local function getGroups(userId)
-    local data = apiGet("https://groups.roblox.com/v2/users/" .. tostring(userId) .. "/groups/roles")
+    local data = apiGetAsync("https://groups.roblox.com/v2/users/" .. tostring(userId) .. "/groups/roles")
     local groups = {}
     if data and data.data then
         for _, g in ipairs(data.data) do
@@ -169,11 +179,14 @@ mainStroke.Color = C.Surface2
 mainStroke.Thickness = 1
 mainStroke.Parent = main
 
--- 标题栏
-local titleBar = Instance.new("Frame")
+-- 标题栏（用TextButton才能在触摸设备上拖拽）
+local titleBar = Instance.new("TextButton")
 titleBar.Size = UDim2.new(1, 0, 0, 32)
 titleBar.BackgroundColor3 = C.WinTitle
 titleBar.BorderSizePixel = 0
+titleBar.Text = ""
+titleBar.AutoButtonColor = false
+titleBar.Active = true
 titleBar.Parent = main
 
 local titleCorner = Instance.new("UICorner")
@@ -236,6 +249,7 @@ minBtn.Font = Enum.Font.GothamBold
 minBtn.TextSize = 14
 minBtn.TextColor3 = C.Text
 minBtn.AutoButtonColor = false
+minBtn.Active = true
 minBtn.ZIndex = 10
 minBtn.Parent = titleBar
 
@@ -257,6 +271,7 @@ closeBtn.Font = Enum.Font.GothamBold
 closeBtn.TextSize = 11
 closeBtn.TextColor3 = C.Text
 closeBtn.AutoButtonColor = false
+closeBtn.Active = true
 closeBtn.ZIndex = 10
 closeBtn.Parent = titleBar
 
@@ -309,6 +324,7 @@ refreshBtn.Font = Enum.Font.GothamBold
 refreshBtn.TextSize = 11
 refreshBtn.TextColor3 = C.Accent
 refreshBtn.AutoButtonColor = false
+refreshBtn.Active = true
 refreshBtn.Parent = main
 
 local refreshC = Instance.new("UICorner")
@@ -645,6 +661,7 @@ minBtn.MouseButton1Click:Connect(function()
         minIcon.TextColor3 = C.Accent
         minIcon.TextXAlignment = Enum.TextXAlignment.Left
         minIcon.AutoButtonColor = false
+        minIcon.Active = true
         minIcon.Parent = gui
 
         local ic = Instance.new("UICorner")
