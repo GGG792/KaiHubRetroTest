@@ -13,7 +13,6 @@ _G.PlayerIntelLoaded = true
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
@@ -75,9 +74,7 @@ end
 
 local function getPlayerDesc(userId)
     local data = apiGet("https://users.roblox.com/v1/users/" .. tostring(userId))
-    if data then
-        return data.description or "无简介"
-    end
+    if data then return data.description or "无简介" end
     return "获取失败"
 end
 
@@ -102,9 +99,7 @@ end
 
 local function getThumbnail(userId)
     local data = apiGet("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. tostring(userId) .. "&size=150x150&format=Png&isCircular=false")
-    if data and data.data and #data.data > 0 then
-        return data.data[1].imageUrl or ""
-    end
+    if data and data.data and #data.data > 0 then return data.data[1].imageUrl or "" end
     return ""
 end
 
@@ -114,8 +109,7 @@ local function getWornAssets(userId)
 end
 
 local function getAssetInfo(assetId)
-    local data = apiGet("https://economy.roblox.com/v2/assets/" .. tostring(assetId) .. "/details")
-    return data
+    return apiGet("https://economy.roblox.com/v2/assets/" .. tostring(assetId) .. "/details")
 end
 
 local function getGroups(userId)
@@ -133,14 +127,15 @@ end
 local playerCache = {}
 local chatLogs = {}
 local conns = {}
+local scannedPlayers = {}
 
 -- ========== 聊天监控 ==========
 local function monitorChat(player)
+    if chatLogs[player.UserId] then return end
     chatLogs[player.UserId] = {msgs = {}, count = 0}
     local conn = LP.Chatted:Connect(function(msg, target)
         if target and target.UserId == player.UserId then
             table.insert(chatLogs[player.UserId].msgs, msg)
-            chatLogs[player.UserId].count = #chatLogs[player.UserId].msgs
             if #chatLogs[player.UserId].msgs > 50 then
                 table.remove(chatLogs[player.UserId].msgs, 1)
             end
@@ -154,7 +149,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "PlayerIntel"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-gui.Parent = game:GetService("CoreGui")
+gui.Parent = LP:WaitForChild("PlayerGui")
 
 local main = Instance.new("Frame")
 main.Name = "Main"
@@ -230,7 +225,7 @@ countLabel.TextXAlignment = Enum.TextXAlignment.Right
 countLabel.ZIndex = 5
 countLabel.Parent = titleBar
 
--- 最小化按钮 - 必须ZIndex高于titleFill
+-- 最小化按钮
 local minBtn = Instance.new("TextButton")
 minBtn.Size = UDim2.new(0, 24, 0, 24)
 minBtn.Position = UDim2.new(1, -56, 0, 4)
@@ -251,7 +246,7 @@ minC.Parent = minBtn
 minBtn.MouseEnter:Connect(function() minBtn.BackgroundColor3 = C.MinHover end)
 minBtn.MouseLeave:Connect(function() minBtn.BackgroundColor3 = C.MinBtn end)
 
--- 关闭按钮 - 必须ZIndex高于titleFill
+-- 关闭按钮
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 24, 0, 24)
 closeBtn.Position = UDim2.new(1, -28, 0, 4)
@@ -363,6 +358,9 @@ statusLabel.Parent = statusBar
 
 -- ========== 创建玩家卡片 ==========
 local function makeCard(player)
+    if scannedPlayers[player.UserId] then return end
+    scannedPlayers[player.UserId] = true
+
     local uid = player.UserId
     local card = Instance.new("Frame")
     card.Name = player.Name
@@ -561,25 +559,12 @@ local function makeCard(player)
 
     -- 异步获取信息
     task.spawn(function()
-        -- 账号信息
-        pcall(function()
-            createdLbl.Text = getAccountAge(uid)
-        end)
-        pcall(function()
-            descLbl.Text = getPlayerDesc(uid):sub(1, 40)
-        end)
-        pcall(function()
-            presenceLbl.Text = getPresence(uid)
-        end)
-        pcall(function()
-            friendLbl.Text = tostring(getCount("https://friends.roblox.com/v1/users/" .. uid .. "/friends/count"))
-        end)
-        pcall(function()
-            followerLbl.Text = tostring(getCount("https://friends.roblox.com/v1/users/" .. uid .. "/followers/count"))
-        end)
-        pcall(function()
-            followingLbl.Text = tostring(getCount("https://friends.roblox.com/v1/users/" .. uid .. "/followings/count"))
-        end)
+        pcall(function() createdLbl.Text = getAccountAge(uid) end)
+        pcall(function() descLbl.Text = getPlayerDesc(uid):sub(1, 40) end)
+        pcall(function() presenceLbl.Text = getPresence(uid) end)
+        pcall(function() friendLbl.Text = tostring(getCount("https://friends.roblox.com/v1/users/" .. uid .. "/friends/count")) end)
+        pcall(function() followerLbl.Text = tostring(getCount("https://friends.roblox.com/v1/users/" .. uid .. "/followers/count")) end)
+        pcall(function() followingLbl.Text = tostring(getCount("https://friends.roblox.com/v1/users/" .. uid .. "/followings/count")) end)
 
         -- 装扮
         pcall(function()
@@ -592,9 +577,7 @@ local function makeCard(player)
                 local info = getAssetInfo(id)
                 if info then
                     table.insert(names, info.Name or "?")
-                    if info.Price and info.Price > 0 then
-                        totalCost = totalCost + info.Price
-                    end
+                    if info.Price and info.Price > 0 then totalCost = totalCost + info.Price end
                 end
             end
             assetLbl.Text = #assets .. "件 | " .. table.concat(names, ","):sub(1, 50)
@@ -699,6 +682,7 @@ closeBtn.MouseButton1Click:Connect(function()
     conns = {}
     playerCache = {}
     chatLogs = {}
+    scannedPlayers = {}
     gui:Destroy()
     _G.PlayerIntelLoaded = false
     notify("PlayerIntel", "已关闭")
@@ -711,8 +695,9 @@ refreshBtn.MouseButton1Click:Connect(function()
     end
     playerCache = {}
     chatLogs = {}
+    scannedPlayers = {}
     statusLabel.Text = "重新扫描..."
-    task.wait(1)
+    task.wait(0.5)
     for _, plr in ipairs(Players:GetPlayers()) do
         makeCard(plr)
     end
@@ -753,18 +738,32 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- ========== 初始扫描 ==========
-task.delay(1, function()
+-- ========== 重复扫描 ==========
+local function scanAllPlayers()
     for _, plr in ipairs(Players:GetPlayers()) do
-        makeCard(plr)
+        if not scannedPlayers[plr.UserId] then
+            makeCard(plr)
+        end
     end
     countLabel.Text = #Players:GetPlayers() .. " 人"
     statusLabel.Text = "就绪 | " .. #Players:GetPlayers() .. " 名玩家"
+end
+
+-- 初始扫描
+task.delay(0.5, scanAllPlayers)
+
+-- 每5秒重复扫描一次（防止漏掉新玩家）
+local repeatScanConn
+repeatScanConn = game:GetService("RunService").Heartbeat:Connect(function()
+    if tick() % 5 < 0.1 then
+        scanAllPlayers()
+    end
 end)
+table.insert(conns, repeatScanConn)
 
 -- 玩家加入
 local joinConn = Players.PlayerAdded:Connect(function(plr)
-    task.wait(2)
+    task.wait(1)
     makeCard(plr)
     countLabel.Text = #Players:GetPlayers() .. " 人"
     statusLabel.Text = "就绪 | " .. #Players:GetPlayers() .. " 名玩家"
@@ -779,6 +778,7 @@ local leaveConn = Players.PlayerRemoving:Connect(function(plr)
     end
     playerCache[plr.UserId] = nil
     chatLogs[plr.UserId] = nil
+    scannedPlayers[plr.UserId] = nil
     countLabel.Text = #Players:GetPlayers() .. " 人"
     statusLabel.Text = "就绪 | " .. #Players:GetPlayers() .. " 名玩家"
 end)
