@@ -7,6 +7,20 @@
 ]]
 
 -- ============================================================
+-- 只能启动一次检测
+-- ============================================================
+if _G.KaiHubRetroLoaded then
+    warn("[KaiHub Retro] 已经加载了！请不要重复执行。")
+    return
+end
+if _G.KaiHubRetroLoading then
+    warn("[KaiHub Retro] 脚本正在加载中，请勿频繁执行！")
+    return
+else
+    _G.KaiHubRetroLoading = true
+end
+
+-- ============================================================
 -- 服务引用
 -- ============================================================
 local Players = game:GetService("Players")
@@ -18,6 +32,11 @@ local SoundService = game:GetService("SoundService")
 local StarterGui = game:GetService("StarterGui")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
+local MarketplaceService = game:GetService("MarketplaceService")
+local AvatarEditorService = game:GetService("AvatarEditorService")
+local LogService = game:GetService("LogService")
 
 local LP = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -1195,7 +1214,77 @@ function RetroUI:CreateWindow(options)
 
     -- 关闭按钮 - 卸载Hub
     closeBtn.MouseButton1Click:Connect(function()
-        _G.unloadKaiHubRetro()
+        -- 断开所有连接
+        for _, conn in ipairs(connections) do
+            if conn then pcall(function() conn:Disconnect() end) end
+        end
+        connections = {}
+        -- 清除XRay连接
+        for _, conn in pairs(xrayConnections) do
+            if conn then pcall(function() conn:Disconnect() end) end
+        end
+        xrayConnections = {}
+        -- 恢复显示隐藏部件
+        showpartsfunction(false)
+        -- 恢复雾气
+        if fogRemoved then RestoreFog() fogRemoved = false end
+        -- 恢复夜视
+        if data and data.basicdata and data.basicdata.releasetools then
+            if data.basicdata.releasetools.nightvision or data.basicdata.releasetools.supernightvision then
+                Lighting.Brightness = data.basicdata.releasetools.originalBrightness
+                Lighting.ExposureCompensation = data.basicdata.releasetools.originalExposureCompensation
+            end
+        end
+        -- 恢复白天设置
+        pcall(setDay)
+        -- 停止音乐
+        if data and data.basicdata and data.basicdata.otherdata and data.basicdata.otherdata.musicbox then
+            pcall(function() data.basicdata.otherdata.musicbox:Stop() end)
+        end
+        -- 禁用所有模块
+        pcall(function() if FlyModule then FlyModule.disable() end end)
+        pcall(function() if TeleportModule then TeleportModule.disable() end end)
+        pcall(function() if PlayerESP then PlayerESP.disable() end end)
+        pcall(function() if data and data.basicdata and data.basicdata.releasetools and data.basicdata.releasetools.npc then data.basicdata.releasetools.npc:disable() end end)
+        pcall(function() if PlayerVisibleModule then PlayerVisibleModule.disable() end end)
+        pcall(function() if LandingEffect then LandingEffect.disable() end end)
+        pcall(function() if FootstepHighlighter then FootstepHighlighter.disable() end end)
+        pcall(function() if AirWalk then AirWalk.disable() end end)
+        pcall(function() if InstantInteraction then InstantInteraction.disable() end end)
+        pcall(function() if MouseUnlockModule then MouseUnlockModule.Disable() end end)
+        pcall(function() if LockCameraModule then LockCameraModule.disable() end end)
+        pcall(function() if AimBotModule then AimBotModule.Disable() end end)
+        pcall(function() if ScrollSwitch then ScrollSwitch:disable() end end)
+        pcall(function() if data and data.basicdata and data.basicdata.releasetools and data.basicdata.releasetools.zoom then data.basicdata.releasetools.zoom:Disable() end end)
+        pcall(function() if data and data.basicdata and data.basicdata.releasetools and data.basicdata.releasetools.Lantern then data.basicdata.releasetools.Lantern.disable = false end end)
+        pcall(function() if data and data.basicdata and data.basicdata.releasetools and data.basicdata.releasetools.SuperLighter then data.basicdata.releasetools.SuperLighter.disable = false end end)
+        pcall(function() if FreecamModule then FreecamModule.freecamenable = false end end)
+        pcall(function() if movementModule then movementModule.Disable() end end)
+        pcall(function() if SpectatorModule then SpectatorModule.close() end end)
+        pcall(function() if StandRecovery then StandRecovery:disableDetection() end end)
+        pcall(function() if FlingDetector then FlingDetector.disable() end end)
+        pcall(function() if AntiVoidModule then AntiVoidModule.disable() end end)
+        pcall(function() if AntiKickModule then AntiKickModule.disable() end end)
+        pcall(function() if DeleteTool then DeleteTool.disable() end end)
+        pcall(function() if GuiDeleter then GuiDeleter.disable() end end)
+        pcall(function() if ChatSpy then ChatSpy.disable() end end)
+        pcall(function() if LoopOofModule then LoopOofModule.disable() end end)
+        pcall(function() if SpinModule then SpinModule.disable() end end)
+        pcall(function() if tpWalk then tpWalk:Enabled(false) end end)
+        -- 恢复重力
+        Workspace.Gravity = 196.2
+        -- 销毁GUI
+        for _, elem in ipairs(guiElements) do
+            if elem and elem.Parent then
+                pcall(function() elem:Destroy() end)
+            end
+        end
+        guiElements = {}
+        -- 清除全局引用
+        _G.KaiHubRetroLoaded = false
+        _G.KaiHubRetroLoading = false
+        _G.unloadKaiHubRetro = nil
+        notify("KaiHub", "Hub已卸载")
     end)
 
     -- 关闭按钮悬停效果
@@ -2564,6 +2653,8 @@ function _G.unloadKaiHubRetro()
     guiElements = {}
 
     -- 清除全局引用
+    _G.KaiHubRetroLoaded = false
+    _G.KaiHubRetroLoading = false
     _G.unloadKaiHubRetro = nil
 
     notify("KaiHub", "Hub已卸载")
@@ -2572,6 +2663,9 @@ end
 -- ============================================================
 -- 启动通知
 -- ============================================================
+_G.KaiHubRetroLoaded = true
+_G.KaiHubRetroLoading = false
+
 notify("KaiHub Retro", "已成功加载! 版本 1.0.0")
 ui.statusLabel.Text = "就绪 | 玩家: " .. LP.Name
 
