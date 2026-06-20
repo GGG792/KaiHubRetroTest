@@ -671,8 +671,7 @@ function RetroUI:CreateWindow(options)
     sidebarScroll.BorderSizePixel = 0
     sidebarScroll.ScrollBarThickness = 6
     sidebarScroll.ScrollBarImageColor3 = Colors.BevelDark
-    sidebarScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    sidebarScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    sidebarScroll.CanvasSize = UDim2.new(0, 0, 0, 500)
     sidebarScroll.Active = true
     sidebarScroll.Parent = sidebar
 
@@ -687,6 +686,11 @@ function RetroUI:CreateWindow(options)
     sidebarPadding.PaddingTop = UDim.new(0, 2)
     sidebarPadding.PaddingBottom = UDim.new(0, 2)
     sidebarPadding.Parent = sidebarScroll
+    
+    -- 监听布局变化自动更新CanvasSize
+    sidebarLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        sidebarScroll.CanvasSize = UDim2.new(0, 0, 0, sidebarLayout.AbsoluteContentSize.Y + 8)
+    end)
 
     -- 右侧内容区
     local contentArea = Instance.new("Frame")
@@ -783,8 +787,7 @@ function RetroUI:CreateWindow(options)
         tabContent.BorderSizePixel = 0
         tabContent.ScrollBarThickness = 6
         tabContent.ScrollBarImageColor3 = Colors.BevelDark
-        tabContent.CanvasSize = UDim2.new(0, 0, 0, 0)
-        tabContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        tabContent.CanvasSize = UDim2.new(0, 0, 0, 500)
         tabContent.Visible = false
         tabContent.Parent = contentArea
 
@@ -799,6 +802,11 @@ function RetroUI:CreateWindow(options)
         contentPadding.PaddingTop = UDim.new(0, 4)
         contentPadding.PaddingBottom = UDim.new(0, 4)
         contentPadding.Parent = tabContent
+        
+        -- 监听布局变化自动更新CanvasSize
+        contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            tabContent.CanvasSize = UDim2.new(0, 0, 0, contentLayout.AbsoluteContentSize.Y + 8)
+        end)
 
         local tabInfo = {
             name = name,
