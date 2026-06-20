@@ -619,12 +619,20 @@ function RetroUI:CreateWindow(options)
     sidebarScroll.ScrollBarImageColor3 = Colors.BevelDark
     sidebarScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     sidebarScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    sidebarScroll.Active = true
     sidebarScroll.Parent = sidebar
 
     local sidebarLayout = Instance.new("UIListLayout")
     sidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
     sidebarLayout.Padding = UDim.new(0, 1)
     sidebarLayout.Parent = sidebarScroll
+
+    local sidebarPadding = Instance.new("UIPadding")
+    sidebarPadding.PaddingLeft = UDim.new(0, 2)
+    sidebarPadding.PaddingRight = UDim.new(0, 2)
+    sidebarPadding.PaddingTop = UDim.new(0, 2)
+    sidebarPadding.PaddingBottom = UDim.new(0, 2)
+    sidebarPadding.Parent = sidebarScroll
 
     -- 右侧内容区
     local contentArea = Instance.new("Frame")
@@ -697,6 +705,7 @@ function RetroUI:CreateWindow(options)
         tabBtn.Font = Enum.Font.Gotham
         tabBtn.TextXAlignment = Enum.TextXAlignment.Left
         tabBtn.AutoButtonColor = false
+        tabBtn.Active = true
         tabBtn.LayoutOrder = tabOrder
         tabBtn.Parent = sidebarScroll
         table.insert(guiElements, tabBtn)
