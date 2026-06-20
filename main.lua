@@ -427,10 +427,45 @@ function RetroUI.bevel(parent, style, thick)
     end
 end
 
+-- 音效系统 - 机械键盘点击声
+local SoundService = game:GetService("SoundService")
+local keyClickSounds = {}
+
+local function initKeySounds()
+    -- 使用rbxassetid创建机械键盘音效（使用Roblox内置的UI点击音效作为替代）
+    -- 由于无法保证外部音频ID可用，使用程序化生成的点击声
+    local soundIds = {
+        "rbxassetid://9113083740",  -- 机械键盘点击声1
+        "rbxassetid://9113083913",  -- 机械键盘点击声2
+        "rbxassetid://9113084088",  -- 机械键盘点击声3
+    }
+    
+    for i, soundId in ipairs(soundIds) do
+        local sound = Instance.new("Sound")
+        sound.Name = "KeyClick_" .. i
+        sound.SoundId = soundId
+        sound.Volume = 0.3
+        sound.Parent = SoundService
+        table.insert(keyClickSounds, sound)
+    end
+end
+
+local function playKeyClick()
+    if #keyClickSounds > 0 then
+        local sound = keyClickSounds[math.random(1, #keyClickSounds)]
+        pcall(function()
+            sound:Play()
+        end)
+    end
+end
+
 -- 创建主窗口
 function RetroUI:CreateWindow(options)
     options = options or {}
     local windowSize = options.size or data.basicdata.window.windowSize
+
+    -- 初始化音效
+    pcall(initKeySounds)
 
     -- 主窗口容器
     local screenGui = Instance.new("ScreenGui")
@@ -523,21 +558,33 @@ function RetroUI:CreateWindow(options)
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Parent = titleBar
 
-    -- 最小化按钮
+    -- 最小化按钮 (WinXP风格 - 下划线图标)
     local minBtn = Instance.new("TextButton")
     minBtn.Name = "MinBtn"
     minBtn.Size = UDim2.new(0, 22, 0, 16)
     minBtn.Position = UDim2.new(1, -46, 0, 3)
     minBtn.BackgroundColor3 = Colors.BtnFace
     minBtn.BorderSizePixel = 0
-    minBtn.Text = "_"
-    minBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
-    minBtn.TextSize = 12
-    minBtn.Font = Enum.Font.GothamBold
+    minBtn.Text = ""
+    minBtn.AutoButtonColor = false
     minBtn.Parent = titleBar
     RetroUI.bevel(minBtn, "raised", 1)
 
-    -- 关闭按钮
+    -- WinXP 最小化图标 (下划线)
+    local minIcon = Instance.new("Frame")
+    minIcon.Name = "MinIcon"
+    minIcon.Size = UDim2.new(0, 8, 0, 2)
+    minIcon.Position = UDim2.new(0.5, -4, 0.5, 3)
+    minIcon.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    minIcon.BorderSizePixel = 0
+    minIcon.Parent = minBtn
+
+    -- 点击音效
+    minBtn.MouseButton1Click:Connect(function()
+        playKeyClick()
+    end)
+
+    -- 关闭按钮 (WinXP风格 - X图标)
     local closeBtn = Instance.new("TextButton")
     closeBtn.Name = "CloseBtn"
     closeBtn.Size = UDim2.new(0, 22, 0, 16)
@@ -548,8 +595,14 @@ function RetroUI:CreateWindow(options)
     closeBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
     closeBtn.TextSize = 11
     closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.AutoButtonColor = false
     closeBtn.Parent = titleBar
     RetroUI.bevel(closeBtn, "raised", 1)
+
+    -- 点击音效
+    closeBtn.MouseButton1Click:Connect(function()
+        playKeyClick()
+    end)
 
     -- === 菜单栏 (18px) ===
     local menuBar = Instance.new("Frame")
@@ -580,6 +633,7 @@ function RetroUI:CreateWindow(options)
         table.insert(guiElements, mBtn)
 
         mBtn.MouseButton1Click:Connect(function()
+            playKeyClick()
             -- 菜单点击效果
             mBtn.BackgroundColor3 = Colors.BtnPressed
             wait(0.1)
@@ -757,6 +811,7 @@ function RetroUI:CreateWindow(options)
 
         -- 点击切换
         tabBtn.MouseButton1Click:Connect(function()
+            playKeyClick()
             for _, t in pairs(tabs) do
                 t.content.Visible = false
                 t.button.BackgroundColor3 = Colors.SidebarBg
@@ -827,6 +882,7 @@ function RetroUI:CreateWindow(options)
         table.insert(guiElements, btn)
 
         btn.MouseButton1Click:Connect(function()
+            playKeyClick()
             -- 按下效果
             btn.BackgroundColor3 = Colors.BtnPressed
             wait(0.08)
@@ -909,6 +965,7 @@ function RetroUI:CreateWindow(options)
         updateVisual()
 
         checkbox.MouseButton1Click:Connect(function()
+            playKeyClick()
             toggled = not toggled
             updateVisual()
             if callback then callback(toggled) end
@@ -1181,22 +1238,34 @@ function RetroUI:CreateWindow(options)
     RetroUI.bevel(taskbarBtn, "raised", 2)
     table.insert(guiElements, taskbarBtn)
 
-    -- 任务栏图标
+    -- 任务栏图标 (WinXP风格 Windows旗帜)
     local tbIcon = Instance.new("Frame")
     tbIcon.Size = UDim2.new(0, 16, 0, 16)
     tbIcon.Position = UDim2.new(0, 4, 0.5, -8)
-    tbIcon.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+    tbIcon.BackgroundTransparency = 1
     tbIcon.BorderSizePixel = 0
     tbIcon.Parent = taskbarBtn
 
-    local tbIconLabel = Instance.new("TextLabel")
-    tbIconLabel.Size = UDim2.new(1, 0, 1, 0)
-    tbIconLabel.BackgroundTransparency = 1
-    tbIconLabel.Text = "K"
-    tbIconLabel.TextColor3 = Color3.new(1, 1, 1)
-    tbIconLabel.TextSize = 10
-    tbIconLabel.Font = Enum.Font.GothamBold
-    tbIconLabel.Parent = tbIcon
+    -- Windows旗帜 - 四个彩色方块
+    local winColors = {
+        Color3.fromRGB(255, 0, 0),    -- 红
+        Color3.fromRGB(0, 180, 0),    -- 绿
+        Color3.fromRGB(0, 100, 255),  -- 蓝
+        Color3.fromRGB(255, 200, 0),  -- 黄
+    }
+    for i = 1, 4 do
+        local flagPart = Instance.new("Frame")
+        flagPart.Size = UDim2.new(0, 7, 0, 7)
+        flagPart.Position = UDim2.new(
+            (i == 1 or i == 3) and 0 or 0.5, 
+            (i == 1 or i == 3) and 0 or 1,
+            (i == 1 or i == 2) and 0 or 0.5,
+            (i == 1 or i == 2) and 0 or 1
+        )
+        flagPart.BackgroundColor3 = winColors[i]
+        flagPart.BorderSizePixel = 0
+        flagPart.Parent = tbIcon
+    end
 
     local tbText = Instance.new("TextLabel")
     tbText.Size = UDim2.new(1, -26, 0, 16)
@@ -1217,6 +1286,7 @@ function RetroUI:CreateWindow(options)
 
     -- 恢复
     taskbarBtn.MouseButton1Click:Connect(function()
+        playKeyClick()
         mainWindow.Visible = true
         taskbarBtn.Visible = false
     end)
