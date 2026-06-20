@@ -2376,7 +2376,427 @@ ui:AddButton(tabMalicious.name, "击杀目标", function()
     end
 end)
 
--- 9. 支持的游戏
+-- 9. 聊天接收器
+local tabChatReceiver = ui:AddTab("聊天接收器")
+
+local chatMessages = {}
+
+local function clearChatMessages()
+    for _, element in ipairs(chatMessages) do
+        if element and element.Parent then
+            element:Destroy()
+        end
+    end
+    chatMessages = {}
+end
+
+local function addChatMessage(sender, text)
+    local msgFrame = Instance.new("Frame")
+    msgFrame.Name = "ChatMsg"
+    msgFrame.Size = UDim2.new(1, 0, 0, 32)
+    msgFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+    msgFrame.BorderSizePixel = 0
+    msgFrame.Parent = tabChatReceiver.content
+    RetroUI.bevel(msgFrame, "sunken", 1)
+    table.insert(chatMessages, msgFrame)
+
+    local msgLabel = Instance.new("TextLabel")
+    msgLabel.Size = UDim2.new(0.7, -8, 1, -4)
+    msgLabel.Position = UDim2.new(0, 4, 0, 2)
+    msgLabel.BackgroundTransparency = 1
+    msgLabel.Text = sender .. ": " .. text
+    msgLabel.TextColor3 = Color3.fromRGB(0, 0, 128)
+    msgLabel.TextSize = 10
+    msgLabel.Font = Enum.Font.Gotham
+    msgLabel.TextXAlignment = Enum.TextXAlignment.Left
+    msgLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    msgLabel.Parent = msgFrame
+
+    local copyBtn = Instance.new("TextButton")
+    copyBtn.Size = UDim2.new(0, 40, 0, 18)
+    copyBtn.Position = UDim2.new(1, -46, 0.5, -9)
+    copyBtn.BackgroundColor3 = Colors.BtnFace
+    copyBtn.BorderSizePixel = 0
+    copyBtn.Text = "复制"
+    copyBtn.TextColor3 = Colors.ContentText
+    copyBtn.TextSize = 9
+    copyBtn.Font = Enum.Font.Gotham
+    copyBtn.AutoButtonColor = false
+    copyBtn.Parent = msgFrame
+    RetroUI.bevel(copyBtn, "raised", 1)
+
+    copyBtn.MouseButton1Click:Connect(function()
+        pcall(function()
+            setclipboard(sender .. ": " .. text)
+        end)
+        notify("KaiHub", "消息已复制到剪贴板")
+    end)
+end
+
+ui:AddButton(tabChatReceiver.name, "清空所有消息", function()
+    clearChatMessages()
+    notify("KaiHub", "所有聊天消息已清除")
+end)
+
+ui:AddLabel(tabChatReceiver.name, "=== 聊天记录 ===")
+
+-- 绑定聊天消息接收
+if ChatControl then
+    pcall(function()
+        ChatControl:MessageReceiver(function(msgData)
+            addChatMessage(msgData.sender, msgData.text)
+        end)
+    end)
+end
+
+-- 10. 执行器
+local tabExecutor = ui:AddTab("执行器")
+
+local execInput = ui:AddTextBox(tabExecutor.name, "请输入代码", function(text)
+    data.basicdata.releasetools.executecode = text
+end)
+
+ui:AddButton(tabExecutor.name, "执行代码", function()
+    local code = data.basicdata.releasetools.executecode
+    if code and code ~= "" then
+        local success, err = pcall(function()
+            loadstring(code)()
+        end)
+        if success then
+            notify("KaiHub", "脚本执行成功!")
+        else
+            notify("KaiHub", "执行失败: " .. tostring(err):sub(1, 50))
+        end
+    else
+        notify("KaiHub", "请输入有效的脚本!")
+    end
+end)
+
+ui:AddButton(tabExecutor.name, "清除代码", function()
+    data.basicdata.releasetools.executecode = ""
+    if execInput and execInput.input then
+        execInput.input.Text = ""
+    end
+end)
+
+ui:AddLabel(tabExecutor.name, "提示: 支持 loadstring 远程脚本")
+
+-- 11. 滤镜控制器
+local tabFilter = ui:AddTab("滤镜控制器")
+
+local filterElements = {}
+local colorBlindModes = {
+    {name = "正常", config = {Saturation = 0, Brightness = 0, Contrast = 0, TintColor = Color3.new(1,1,1)}},
+    {name = "红色弱", config = {Saturation = -0.3, Brightness = 0.1, Contrast = 0.2, TintColor = Color3.new(1, 0.7, 0.7)}},
+    {name = "红色盲", config = {Saturation = -0.5, Brightness = 0.15, Contrast = 0.3, TintColor = Color3.new(1, 0.5, 0.5)}},
+    {name = "绿色弱", config = {Saturation = -0.3, Brightness = 0.1, Contrast = 0.2, TintColor = Color3.new(0.7, 1, 0.7)}},
+    {name = "绿色盲", config = {Saturation = -0.5, Brightness = 0.15, Contrast = 0.3, TintColor = Color3.new(0.5, 1, 0.5)}},
+    {name = "蓝色弱", config = {Saturation = -0.3, Brightness = 0.1, Contrast = 0.2, TintColor = Color3.new(0.7, 0.7, 1)}},
+    {name = "蓝色盲", config = {Saturation = -0.5, Brightness = 0.15, Contrast = 0.3, TintColor = Color3.new(0.5, 0.5, 1)}},
+    {name = "全色弱", config = {Saturation = -0.8, Brightness = 0.2, Contrast = 0.4, TintColor = Color3.new(0.8, 0.8, 0.8)}},
+    {name = "全色盲", config = {Saturation = -1, Brightness = 0.3, Contrast = 0.5, TintColor = Color3.new(0.5, 0.5, 0.5)}},
+}
+
+local function getAllPostEffects()
+    local effects = {}
+    for _, obj in ipairs(Lighting:GetChildren()) do
+        if obj:IsA("PostEffect") then
+            table.insert(effects, obj)
+        end
+    end
+    local cam = Workspace.CurrentCamera
+    if cam then
+        for _, obj in ipairs(cam:GetChildren()) do
+            if obj:IsA("PostEffect") then
+                table.insert(effects, obj)
+            end
+        end
+    end
+    return effects
+end
+
+local function getColorCorrection()
+    for _, effect in ipairs(getAllPostEffects()) do
+        if effect:IsA("ColorCorrectionEffect") then
+            return effect
+        end
+    end
+    return nil
+end
+
+local function applyColorBlindMode(config)
+    local cc = getColorCorrection()
+    if not cc then
+        cc = Instance.new("ColorCorrectionEffect")
+        cc.Parent = Lighting
+    end
+    cc.Saturation = config.Saturation
+    cc.Brightness = config.Brightness
+    cc.Contrast = config.Contrast
+    cc.TintColor = config.TintColor
+end
+
+local function refreshFilterList()
+    for _, elem in ipairs(filterElements) do
+        if elem and elem.Parent then elem:Destroy() end
+    end
+    filterElements = {}
+
+    ui:AddLabel(tabFilter.name, "=== 后处理特效 ===")
+
+    local effects = getAllPostEffects()
+    for _, effect in ipairs(effects) do
+        local displayName = effect.Name ~= "" and effect.Name or effect.ClassName
+        ui:AddToggle(tabFilter.name, displayName, effect.Enabled, function(val)
+            effect.Enabled = val
+            notify("KaiHub", displayName .. (val and " 已启用" or " 已禁用"))
+        end)
+    end
+
+    ui:AddSeparator(tabFilter.name)
+    ui:AddLabel(tabFilter.name, "=== 颜色微调 ===")
+
+    local cc = getColorCorrection()
+    if cc then
+        ui:AddSlider(tabFilter.name, "饱和度", -1, 1, cc.Saturation, function(val)
+            cc.Saturation = val
+        end)
+        ui:AddSlider(tabFilter.name, "亮度", -1, 1, cc.Brightness, function(val)
+            cc.Brightness = val
+        end)
+        ui:AddSlider(tabFilter.name, "对比度", -1, 1, cc.Contrast, function(val)
+            cc.Contrast = val
+        end)
+    else
+        ui:AddLabel(tabFilter.name, "未检测到 ColorCorrectionEffect")
+    end
+
+    ui:AddSeparator(tabFilter.name)
+    ui:AddLabel(tabFilter.name, "=== 色盲模拟器 ===")
+
+    for _, mode in ipairs(colorBlindModes) do
+        ui:AddButton(tabFilter.name, "色盲模式: " .. mode.name, function()
+            applyColorBlindMode(mode.config)
+            notify("KaiHub", "已切换到: " .. mode.name)
+        end)
+    end
+
+    ui:AddSeparator(tabFilter.name)
+
+    ui:AddButton(tabFilter.name, "重置所有滤镜", function()
+        for _, effect in ipairs(getAllPostEffects()) do
+            effect.Enabled = true
+            if effect:IsA("ColorCorrectionEffect") then
+                effect.Saturation = 0
+                effect.Brightness = 0
+                effect.Contrast = 0
+                effect.TintColor = Color3.new(1, 1, 1)
+            end
+        end
+        notify("KaiHub", "所有滤镜已重置")
+    end)
+
+    ui:AddButton(tabFilter.name, "刷新滤镜列表", function()
+        refreshFilterList()
+    end)
+end
+
+refreshFilterList()
+
+-- 12. 自定义称号
+local tabTitle = ui:AddTab("自定义称号")
+
+local titleData = data.basicdata.otherdata.playertitle
+
+ui:AddToggle(tabTitle.name, "功能开关", false, function(val)
+    if titleData.tag then
+        if val then
+            pcall(function() titleData.tag:enable() end)
+        else
+            pcall(function() titleData.tag:disable() end)
+        end
+    end
+end)
+
+ui:AddTextBox(tabTitle.name, "称号文本", function(text)
+    titleData.text = text
+end)
+
+ui:AddSlider(tabTitle.name, "字号", 1, 50, titleData.size or 18, function(val)
+    titleData.size = val
+end)
+
+ui:AddToggle(tabTitle.name, "加粗", titleData.bold or false, function(val)
+    titleData.bold = val
+end)
+
+ui:AddToggle(tabTitle.name, "倾斜", titleData.italic or false, function(val)
+    titleData.italic = val
+end)
+
+ui:AddTextBox(tabTitle.name, "字体", function(text)
+    titleData.font = text
+end)
+
+ui:AddSeparator(tabTitle.name)
+
+ui:AddButton(tabTitle.name, "应用更改", function()
+    if titleData.tag then
+        pcall(function()
+            titleData.tag:update({
+                text = titleData.text,
+                color = titleData.color,
+                size = titleData.size,
+                bold = titleData.bold,
+                italic = titleData.italic,
+                font = titleData.font
+            })
+        end)
+        notify("KaiHub", "称号已更新: " .. (titleData.text or "[VIP]"))
+    else
+        notify("KaiHub", "称号模块未加载")
+    end
+end)
+
+-- 13. 服务器查询
+local tabServer = ui:AddTab("服务器查询")
+
+local serverUIElements = {}
+local isRefreshing = false
+
+local function clearServerList()
+    for _, elem in ipairs(serverUIElements) do
+        if elem and elem.Parent then elem:Destroy() end
+    end
+    serverUIElements = {}
+end
+
+local function refreshServerList()
+    if isRefreshing then
+        notify("KaiHub", "正在刷新中，请稍候...")
+        return
+    end
+    clearServerList()
+    isRefreshing = true
+
+    ui:AddLabel(tabServer.name, "正在获取服务器列表...")
+
+    if ServerFinderModule then
+        local serverQuery = ServerFinderModule.new()
+        pcall(function()
+            serverQuery:refreshAsync(function(servers)
+                isRefreshing = false
+                clearServerList()
+
+                if #servers == 0 then
+                    ui:AddLabel(tabServer.name, "没有找到公共服务器")
+                    return
+                end
+
+                ui:AddLabel(tabServer.name, "找到 " .. tostring(#servers) .. " 个服务器")
+
+                for i, serverData in ipairs(servers) do
+                    local ping = serverData.ping or 0
+                    local players = serverData.playing or 0
+                    local maxPlayers = serverData.maxPlayers or 0
+                    local quality = "好"
+                    if ping > 250 then quality = "差"
+                    elseif ping > 150 then quality = "中"
+                    end
+
+                    local serverLabel = ui:AddLabel(tabServer.name,
+                        string.format("服务器%d: %d/%d人 | Ping:%dms | 质量:%s",
+                            i, players, maxPlayers, ping, quality))
+
+                    ui:AddButton(tabServer.name, "加入服务器 " .. tostring(i), function()
+                        pcall(function()
+                            TeleportService:TeleportToPlaceInstance(game.PlaceId, serverData.id, LP)
+                        end)
+                        notify("KaiHub", "正在传送...")
+                    end)
+                end
+            end)
+        end)
+    else
+        isRefreshing = false
+        ui:AddLabel(tabServer.name, "ServerFinderModule 未加载")
+    end
+end
+
+ui:AddButton(tabServer.name, "刷新服务器列表", function()
+    refreshServerList()
+end)
+
+-- 14. 执行器查询
+local tabExecDetect = ui:AddTab("执行器查询")
+
+local executorData = {robloxinfo = nil, exploits = nil}
+
+pcall(function()
+    executorData.robloxinfo = HttpService:JSONDecode(game:HttpGet("https://weao.xyz/api/versions/current"))
+end)
+pcall(function()
+    executorData.exploits = HttpService:JSONDecode(game:HttpGet("https://weao.xyz/api/status/exploits"))
+end)
+
+ui:AddLabel(tabExecDetect.name, "=== Roblox 版本信息 ===")
+
+if executorData.robloxinfo then
+    local rbx = executorData.robloxinfo
+    if rbx.version then
+        ui:AddLabel(tabExecDetect.name, "版本: " .. tostring(rbx.version))
+    end
+    if rbx.updatedDate then
+        ui:AddLabel(tabExecDetect.name, "更新: " .. tostring(rbx.updatedDate))
+    end
+else
+    ui:AddLabel(tabExecDetect.name, "无法获取 Roblox 版本信息")
+end
+
+ui:AddSeparator(tabExecDetect.name)
+ui:AddLabel(tabExecDetect.name, "=== 执行器状态 ===")
+
+if executorData.exploits and type(executorData.exploits) == "table" then
+    local count = 0
+    for _, exec in ipairs(executorData.exploits) do
+        if type(exec) == "table" and exec.title then
+            count = count + 1
+            local status = exec.detected and "已检测" or "未检测"
+            local free = exec.free and "免费" or "付费"
+            local platform = exec.platform or "未知"
+            local version = exec.version or "未知"
+
+            ui:AddLabel(tabExecDetect.name,
+                string.format("[%s] %s (%s) | %s | %s",
+                    platform, exec.title, version, status, free))
+
+            if exec.website then
+                ui:AddButton(tabExecDetect.name, "复制官网: " .. exec.title, function()
+                    pcall(function() setclipboard(exec.website) end)
+                    notify("KaiHub", "已复制到剪贴板")
+                end)
+            end
+        end
+        if count >= 20 then break end
+    end
+    if count == 0 then
+        ui:AddLabel(tabExecDetect.name, "没有获取到执行器数据")
+    end
+else
+    ui:AddLabel(tabExecDetect.name, "无法获取执行器信息")
+end
+
+ui:AddButton(tabExecDetect.name, "刷新执行器数据", function()
+    pcall(function()
+        executorData.robloxinfo = HttpService:JSONDecode(game:HttpGet("https://weao.xyz/api/versions/current"))
+    end)
+    pcall(function()
+        executorData.exploits = HttpService:JSONDecode(game:HttpGet("https://weao.xyz/api/status/exploits"))
+    end)
+    notify("KaiHub", "执行器数据已刷新（需重新打开此标签页）")
+end)
+
+-- 15. 支持的游戏
 local tabGames = ui:AddTab("支持的游戏")
 
 for _, gameInfo in ipairs(data.Supported_Games) do
@@ -2388,7 +2808,7 @@ for _, gameInfo in ipairs(data.Supported_Games) do
     end)
 end
 
--- 10. 设置
+-- 16. 设置
 local tabSettings = ui:AddTab("设置")
 
 ui:AddLabel(tabSettings.name, "=== 飞行设置 ===")
@@ -2414,7 +2834,7 @@ ui:AddSlider(tabSettings.name, "平移距离", 1, 100, 10, function(val)
     end
 end)
 
--- 11. 关于
+-- 17. 关于
 local tabAbout = ui:AddTab("关于")
 
 ui:AddLabel(tabAbout.name, "KaiHub Retro v1.0.0")
