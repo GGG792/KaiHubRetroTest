@@ -10,7 +10,8 @@
 -- 只能启动一次检测
 -- ============================================================
 if _G.KaiHubRetroLoaded then
-    warn("[KaiHub Retro] 已经加载了！请不要重复执行。")
+    warn("[KaiHub Retro] 已经加载了！请先卸载旧版本再重新加载。")
+    warn("[KaiHub Retro] 执行 _G.unloadKaiHubRetro() 卸载旧版本")
     return
 end
 if _G.KaiHubRetroLoading then
