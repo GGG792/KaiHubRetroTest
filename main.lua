@@ -2464,6 +2464,121 @@ ui:AddButton(tabMalicious.name, "击杀目标", function()
     end
 end)
 
+ui:AddSeparator(tabMalicious.name)
+ui:AddLabel(tabMalicious.name, "=== 最强战场自动打人 ===")
+
+-- 最强战场自动打人功能
+local autoFarmEnabled = false
+local autoFarmTarget = nil
+local autoFarmConn = nil
+
+local function teleportBehindTarget(player, target, distance)
+    if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+    local targetHRP = target.Character.HumanoidRootPart
+    local behindPos = targetHRP.Position - (targetHRP.CFrame.LookVector * distance)
+    player.Character.HumanoidRootPart.CFrame = CFrame.new(behindPos, targetHRP.Position)
+end
+
+local function isAnimationPlaying(character)
+    if not character or not character:FindFirstChildOfClass("Humanoid") then return false end
+    for _, track in pairs(character:FindFirstChildOfClass("Humanoid"):GetPlayingAnimationTracks()) do
+        if track.IsPlaying then return true end
+    end
+    return false
+end
+
+local function startAutoFarm()
+    if autoFarmConn then return end
+    local player = LP
+    local targetPlayer = autoFarmTarget
+
+    autoFarmConn = RunService.Heartbeat:Connect(function()
+        if not autoFarmEnabled then return end
+
+        -- 如果没有指定目标或目标死亡，随机选一个
+        if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local players = Players:GetPlayers()
+            repeat
+                targetPlayer = players[math.random(1, #players)]
+            until targetPlayer ~= player and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            autoFarmTarget = targetPlayer
+        end
+
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+
+        -- 如果目标在放技能，躲避
+        if isAnimationPlaying(targetPlayer.Character) then
+            local endTime = tick() + 1
+            while tick() < endTime and autoFarmEnabled do
+                teleportBehindTarget(player, targetPlayer, 13)
+                task.wait(0.02)
+            end
+        else
+            -- 传送到目标背后并攻击
+            teleportBehindTarget(player, targetPlayer, 3)
+            pcall(function()
+                local args = {[1] = {Goal = "LeftClick", Mobile = true}}
+                player.Character.Communicate:FireServer(unpack(args))
+                local argsRelease = {[1] = {Goal = "LeftClickRelease", Mobile = true}}
+                player.Character.Communicate:FireServer(unpack(argsRelease))
+            end)
+        end
+    end)
+end
+
+local function stopAutoFarm()
+    if autoFarmConn then
+        autoFarmConn:Disconnect()
+        autoFarmConn = nil
+    end
+    autoFarmEnabled = false
+    autoFarmTarget = nil
+end
+
+-- 刷新玩家列表按钮
+local function refreshStrongestPlayerList()
+    -- 清除旧的玩家按钮（保留标签和分隔符）
+    for _, child in ipairs(tabMalicious.content:GetChildren()) do
+        if child.Name:find("StrongestPlayer_") then
+            child:Destroy()
+        end
+    end
+
+    ui:AddLabel(tabMalicious.name, "=== 选择目标玩家 ===")
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LP then
+            local btnName = "选择: " .. player.Name
+            ui:AddButton(tabMalicious.name, btnName, function()
+                autoFarmTarget = player
+                notify("KaiHub", "已选择目标: " .. player.Name)
+            end)
+        end
+    end
+end
+
+ui:AddButton(tabMalicious.name, "刷新玩家列表", function()
+    refreshStrongestPlayerList()
+    notify("KaiHub", "玩家列表已刷新")
+end)
+
+ui:AddToggle(tabMalicious.name, "自动打人", false, function(val)
+    autoFarmEnabled = val
+    if val then
+        startAutoFarm()
+        notify("KaiHub", "自动打人已开启" .. (autoFarmTarget and " (目标: " .. autoFarmTarget.Name .. ")" or " (随机目标)"))
+    else
+        stopAutoFarm()
+        notify("KaiHub", "自动打人已关闭")
+    end
+end)
+
+ui:AddButton(tabMalicious.name, "清除目标", function()
+    autoFarmTarget = nil
+    notify("KaiHub", "目标已清除，将随机选择")
+end)
+
 -- 9. 聊天接收器
 local tabChatReceiver = ui:AddTab("聊天接收器")
 
